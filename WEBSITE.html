@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Watchroom website guide</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #183d38; background: #edf3f0; font-synthesis: none; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 44px 20px; }
+    main { width: min(100%, 650px); margin: 0 auto; }
+    h1 { margin: 0 0 10px; font-size: clamp(27px, 5vw, 35px); font-weight: 650; letter-spacing: -.8px; }
+    header p { color: #52726a; margin-bottom: 28px; }
+    p { margin: 0; font-size: 15px; line-height: 1.65; }
+    strong { font-weight: 600; }
+    ol { padding: 0; margin: 0; list-style: none; counter-reset: guide; }
+    li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 14px; padding: 21px 0; border-top: 1px solid #cfddd6; counter-increment: guide; }
+    li::before { content: counter(guide); display: grid; place-items: center; width: 29px; height: 29px; border: 1px solid #c4d6ce; border-radius: 50%; font-size: 13px; font-weight: 600; }
+    h2 { margin: 3px 0 8px; font-size: 17px; font-weight: 600; }
+    .notes { padding-top: 21px; border-top: 1px solid #cfddd6; }
+    .notes p + p { margin-top: 11px; }
+    .muted { color: #52726a; font-size: 13px; }
+    a { color: #285e52; text-underline-offset: 3px; }
+    a:focus-visible, summary:focus-visible { outline: 3px solid #77a99a; outline-offset: 3px; }
+    details { margin-top: 23px; padding-top: 20px; border-top: 1px solid #cfddd6; font-size: 14px; }
+    summary { cursor: pointer; font-weight: 600; }
+    details p { margin-top: 12px; font-size: 13px; }
+    code { display: block; margin-top: 10px; padding: 12px; border: 1px solid #c4d6ce; border-radius: 6px; background: #f8fbf9; font: 13px ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+    footer { margin-top: 25px; color: #52726a; font-size: 12px; line-height: 1.6; }
+    @media (max-width: 440px) { body { padding: 30px 17px; } li { gap: 11px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Watchroom website</h1>
+      <p>Open the same website in desktop Brave or Chrome.</p>
+    </header>
+    <ol>
+      <li><div>
+        <h2>Publish with GitHub Pages</h2>
+        <p>In your GitHub repository, open <strong>Settings → Pages</strong>. Under <strong>Build and deployment</strong>, choose <strong>GitHub Actions</strong> as the source. The Pages workflow builds and publishes the complete <strong>website</strong> folder.</p>
+      </div></li>
+      <li><div>
+        <h2>Open the website link</h2>
+        <p>After the deployment succeeds, find the HTTPS website address in <strong>Settings → Pages</strong>. Open that address and send it to your partner.</p>
+      </div></li>
+      <li><div>
+        <h2>Make a room</h2>
+        <p>Enter your name and click <strong>Make room</strong>. Use <strong>Invite partner</strong> to copy the private invitation and send it to your partner. They can open the invitation or choose <strong>Join room</strong> and paste its room code.</p>
+      </div></li>
+      <li><div>
+        <h2>Share the show</h2>
+        <p>Open the show in another browser tab. In Watchroom, click <strong>Share a tab</strong>, choose the show’s tab, and enable <strong>Share tab audio</strong>. Keep Watchroom open and use headphones.</p>
+      </div></li>
+    </ol>
+    <div class="notes">
+      <h2>Updates</h2>
+      <p>Push your changes to GitHub. After the Pages workflow finishes deploying, refresh the website to load the update. If an old version remains, use a hard reload: <strong>⌘ShiftR</strong> on Mac or <strong>CtrlShiftR</strong> on Windows.</p>
+      <p class="muted">Refresh after leaving your room. Closing or refreshing the host’s tab ends that room; make a new room afterward.</p>
+      <p class="muted">Run the app from HTTPS, or localhost for local testing. Camera, microphone, and screen sharing require a secure context and your browser’s permission. Opening website/index.html directly as a local file is unsupported.</p>
+      <p class="muted">GitHub Pages serves the website files. The public PeerJS Cloud service helps the two browsers connect, so both people need internet access. Some networks require TURN relay details in Settings. Protected streaming video may appear black.</p>
+    </div>
+    <details>
+      <summary>Build and preview locally</summary>
+      <p>From the project folder, build with Node.js. This script uses Node’s built-in tools and needs no npm packages.</p>
+      <code>node scripts/build-website.mjs</code>
+      <p>If Python 3 is installed, start a local preview and open <a href="http://localhost:8080">http://localhost:8080</a>. This local address is for testing on your computer.</p>
+      <code>python3 -m http.server 8080 --directory website</code>
+    </details>
+    <footer>
+      Official guidance: <a href="https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages">GitHub Pages workflows</a> · <a href="https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia">Browser screen sharing</a>.
+    </footer>
+  </main>
+</body>
+</html>
