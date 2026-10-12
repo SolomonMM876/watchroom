@@ -6,7 +6,7 @@ Screen and tab audio sharing, camera and microphone chat, text chat and reaction
 
 Make a room and send its private invitation link to your partner. Keep the host tab open. Choose a browser tab and enable tab audio when sharing.
 
-The shared screen fills the workspace. Partner and self cameras start at the bottom right, with chat along the bottom. Drag panel headers and resize from a corner. Layouts are saved in your browser; Reset layout restores the default. Reaction sounds can be disabled by either person.
+The compact top bar leaves more space for the shared screen. The cameras start at the bottom left, directly left of chat and slightly overlapping the screen. Your smaller camera is nested in the partner camera’s bottom-right corner. Drag panel headers and resize from a corner. Layouts are saved in your browser; Reset layout restores the default. Reaction sounds can be disabled by either person.
 
 ## Updates
 

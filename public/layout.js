@@ -23,7 +23,7 @@ export function initWatchLayout() {
   function readSaved() {
     try {
       const data = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (data?.version !== 1 || !data.panels || !PANEL_NAMES.every(name => {
+      if (![1, 2].includes(data?.version) || !data.panels || !PANEL_NAMES.every(name => {
         const rect = data.panels[name];
         return rect && ['x', 'y', 'w', 'h'].every(key => Number.isFinite(rect[key])) && rect.x >= 0 && rect.x <= 1 && rect.y >= 0 && rect.y <= 1 && rect.w > 0 && rect.w <= 1 && rect.h > 0 && rect.h <= 1;
       })) return null;
@@ -36,7 +36,7 @@ export function initWatchLayout() {
   function clamp(value, min, max) { return Math.min(max, Math.max(Math.min(min, max), value)); }
 
   function constrain(name, rect, area = bounds()) {
-    const minimum = name === 'screen' ? [320, 210] : name === 'partner' ? [180, 128] : name === 'self' ? [115, 86] : [340, rect.w <= 650 ? 270 : 142];
+    const minimum = name === 'screen' ? [320, 210] : name === 'partner' ? [180, 128] : name === 'self' ? [115, 86] : [340, rect.w <= 520 ? 182 : 142];
     const w = clamp(rect.w, minimum[0], area.w);
     const h = clamp(rect.h, minimum[1], area.h);
     return {
@@ -48,19 +48,68 @@ export function initWatchLayout() {
   }
 
   function defaults(area) {
-    const chatH = Math.min(156, Math.max(142, area.h * .22));
+    const partnerW = Math.min(300, Math.max(220, area.w * .215));
+    const chatW = area.w - partnerW - 8;
+    const chatH = chatW <= 520 ? 182 : 148;
     const screenH = area.h - chatH - 8;
-    const partnerW = Math.min(330, Math.max(220, area.w * .235));
-    const selfW = Math.round(partnerW * .54);
-    const partnerH = Math.round(partnerW * .625 + 26);
+    const selfW = Math.max(115, Math.round(partnerW * .44));
+    const partnerH = Math.max(Math.round(partnerW * .625 + 26), chatH + 56);
     const selfH = Math.round(selfW * .625 + 26);
-    const cameraBottom = screenH - 48;
     return {
       screen: { x: 0, y: 0, w: area.w, h: screenH, z: 1 },
-      partner: { x: area.w - partnerW - selfW - 24, y: cameraBottom - partnerH, w: partnerW, h: partnerH, z: 3 },
-      self: { x: area.w - selfW - 12, y: cameraBottom - selfH, w: selfW, h: selfH, z: 4 },
-      chat: { x: 0, y: area.h - chatH, w: area.w, h: chatH, z: 2 },
+      partner: { x: 0, y: area.h - partnerH, w: partnerW, h: partnerH, z: 3 },
+      self: { x: partnerW - selfW - 8, y: area.h - selfH - 30, w: selfW, h: selfH, z: 4 },
+      chat: { x: partnerW + 8, y: area.h - chatH, w: chatW, h: chatH, z: 2 },
     };
+  }
+
+  function migrateSaved() {
+    if (saved?.version !== 1) return;
+    // V1 wrote no viewport dimensions. Its fixed gaps recover the original
+    // workspace, allowing an exact default match without erasing custom layouts.
+    const rects = saved.panels;
+    const area = { w: 12 / (1 - rects.self.x - rects.self.w), h: 8 / (1 - rects.screen.h - rects.chat.h) };
+    let untouched = false;
+    if (Number.isFinite(area.w) && Number.isFinite(area.h) && area.w >= 735.99 && area.h >= 359.99) {
+      const chatH = Math.min(156, Math.max(142, area.h * .22));
+      const screenH = area.h - chatH - 8;
+      const partnerW = Math.min(330, Math.max(220, area.w * .235));
+      const selfW = Math.round(partnerW * .54);
+      const partnerH = Math.round(partnerW * .625 + 26);
+      const selfH = Math.round(selfW * .625 + 26);
+      const cameraBottom = screenH - 48;
+      const previous = {
+        screen: { x: 0, y: 0, w: area.w, h: screenH },
+        partner: { x: area.w - partnerW - selfW - 24, y: cameraBottom - partnerH, w: partnerW, h: partnerH },
+        self: { x: area.w - selfW - 12, y: cameraBottom - selfH, w: selfW, h: selfH },
+        chat: { x: 0, y: area.h - chatH, w: area.w, h: chatH },
+      };
+      untouched = PANEL_NAMES.every(name => {
+        const expected = constrain(name, previous[name], area);
+        return ['x', 'y', 'w', 'h'].every(key => Math.abs(rects[name][key] * (key === 'x' || key === 'w' ? area.w : area.h) - expected[key]) <= .002);
+      });
+    }
+    saved = untouched ? null : { ...saved, version: 2 };
+    try {
+      if (saved) localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+      else localStorage.removeItem(STORAGE_KEY);
+    } catch { /* The in-memory migration still preserves custom positions. */ }
+  }
+
+  function updateControlInset() {
+    const screen = layout.screen;
+    const controls = panels.screen.querySelector('.screen-controls');
+    const barTop = screen.y + screen.h - controls.offsetHeight;
+    let inset = 10;
+    for (const name of ['partner', 'self']) {
+      const camera = layout[name];
+      if (camera.y < screen.y + screen.h && camera.y + camera.h > barTop && camera.x < screen.x + screen.w * .35 && camera.x + camera.w > screen.x) {
+        inset = Math.max(inset, camera.x + camera.w - screen.x + 8);
+      }
+    }
+    // Keep the share/countdown controls beside the left camera cluster. A very
+    // small custom screen keeps its wrapping toolbar instead of an empty inset.
+    panels.screen.style.setProperty('--screen-controls-inset', `${inset <= screen.w - 340 ? inset : 10}px`);
   }
 
   function apply(name) {
@@ -71,7 +120,7 @@ export function initWatchLayout() {
     panel.style.width = `${rect.w}px`;
     panel.style.height = `${rect.h}px`;
     panel.style.zIndex = String(rect.z);
-    if (name === 'chat') panel.classList.toggle('compact-chat', rect.w <= 650);
+    if (name === 'chat') panel.classList.toggle('compact-chat', rect.w <= 520);
   }
 
   function announce(text) {
@@ -93,12 +142,14 @@ export function initWatchLayout() {
     if (mobileQuery.matches) return;
     const area = bounds();
     if (area.w < 1 || area.h < 1) return;
+    migrateSaved();
     const next = saved ? Object.fromEntries(PANEL_NAMES.map(name => {
       const rect = saved.panels[name];
       return [name, { x: rect.x * area.w, y: rect.y * area.h, w: rect.w * area.w, h: rect.h * area.h, z: rect.z }];
     })) : defaults(area);
     layout = Object.fromEntries(PANEL_NAMES.map(name => [name, constrain(name, next[name], area)]));
     for (const name of PANEL_NAMES) apply(name);
+    updateControlInset();
     topLayer = Math.max(4, ...PANEL_NAMES.map(name => layout[name].z));
   }
 
@@ -112,7 +163,8 @@ export function initWatchLayout() {
     const area = bounds();
     if (!area.w || !area.h) return;
     saved = {
-      version: 1,
+      version: 2,
+      viewport: { w: area.w, h: area.h },
       panels: Object.fromEntries(PANEL_NAMES.map(name => {
         const rect = layout[name];
         return [name, { x: rect.x / area.w, y: rect.y / area.h, w: rect.w / area.w, h: rect.h / area.h, z: rect.z }];
@@ -132,6 +184,14 @@ export function initWatchLayout() {
       topLayer = 4;
     }
     layout[name].z = ++topLayer;
+    if (name === 'partner') {
+      const partner = layout.partner;
+      const self = layout.self;
+      if (self.x < partner.x + partner.w && self.x + self.w > partner.x && self.y < partner.y + partner.h && self.y + self.h > partner.y && self.z <= partner.z) {
+        self.z = ++topLayer;
+        apply('self');
+      }
+    }
   }
 
   function begin(event) {
@@ -157,6 +217,7 @@ export function initWatchLayout() {
     else { rect.x += dx; rect.y += dy; }
     layout[gesture.name] = constrain(gesture.name, rect);
     apply(gesture.name);
+    updateControlInset();
     event.preventDefault();
   }
 
@@ -185,6 +246,7 @@ export function initWatchLayout() {
     rect.z = layout[name].z;
     layout[name] = constrain(name, rect);
     apply(name);
+    updateControlInset();
     persist();
     announce(`${name === 'self' ? 'Your camera' : name[0].toUpperCase() + name.slice(1)} panel ${resize ? 'resized' : 'moved'}. Layout saved.`);
     event.preventDefault();
