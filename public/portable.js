@@ -91,8 +91,8 @@ function signalPayload(payload) {
 }
 
 function peerProblem(error) {
-  if (error?.type === 'peer-unavailable') return problem('Your partner’s room is offline. Ask them to keep their Watchroom tab open, then try the invitation again.', 404);
-  if (error?.type === 'unavailable-id') return problem('This room is already open in another tab. Return to that tab, or create a fresh room.', 409);
+  if (error?.type === 'peer-unavailable') return Object.assign(problem('Your partner’s room is offline. Ask them to keep their Watchroom tab open, then try the invitation again.', 404), { type: error.type });
+  if (error?.type === 'unavailable-id') return Object.assign(problem('This room is already open in another tab. Return to that tab, or create a fresh room.', 409), { type: error.type });
   if (error?.type === 'browser-incompatible') return problem('This browser cannot make the connection. Open the extension in desktop Brave or Chrome.', 400);
   return problem('The connection service could not be reached. Check your internet connection or try again in a moment. Some networks also need a TURN relay.');
 }
@@ -188,6 +188,7 @@ export class PortableRoomClient extends EventTarget {
 
   async _openPeer(id) {
     await loadPeerLibrary();
+    if (this._closed) throw problem('This room connection was cancelled.', 410);
     if (typeof globalThis.Peer !== 'function') throw problem('The extension’s connection library did not load. Reload this tab and try again.');
     const peer = new globalThis.Peer(id, {
       host: '0.peerjs.com', port: 443, path: '/', secure: true, debug: 0,
@@ -376,11 +377,11 @@ export class PortableRoomClient extends EventTarget {
     }
   }
 
-  async create({ name, iceServers = DEFAULT_ICE } = {}) {
+  async create({ name, iceServers = DEFAULT_ICE, roomId = randomHex(16), roomSecret = randomHex(24), shared = false } = {}) {
     if (this.session || this._closed) throw problem('Use a fresh room client to create another room.', 400);
+    if (!/^[a-f0-9]{32}$/.test(roomId) || !/^[a-f0-9]{48}$/.test(roomSecret)) throw problem('This shared room is not configured correctly.', 400);
     this._iceServers = iceServers;
-    const roomId = randomHex(16);
-    this.session = { roomId, roomSecret: randomHex(24), participantId: `sofa-${roomId}`, participantSecret: randomHex(24), role: 'host', name: displayName(name), portable: true };
+    this.session = { roomId, roomSecret, participantId: `sofa-${roomId}`, participantSecret: randomHex(24), role: 'host', name: displayName(name), portable: true, shared: shared === true };
     try {
       await this._openPeer(this.session.participantId);
       return this._snapshot();
@@ -390,11 +391,11 @@ export class PortableRoomClient extends EventTarget {
     }
   }
 
-  async join({ roomId, roomSecret, name, iceServers = DEFAULT_ICE } = {}) {
+  async join({ roomId, roomSecret, name, iceServers = DEFAULT_ICE, shared = false } = {}) {
     if (this.session || this._closed) throw problem('Use a fresh room client to enter another room.', 400);
     if (!/^[a-f0-9]{32}$/.test(roomId || '') || !/^[a-f0-9]{48}$/.test(roomSecret || '')) throw problem('This invitation is not valid.', 403);
     this._iceServers = iceServers;
-    this.session = { roomId, roomSecret, participantId: `sofa-guest-${randomHex(16)}`, participantSecret: randomHex(24), role: 'guest', name: displayName(name), portable: true };
+    this.session = { roomId, roomSecret, participantId: `sofa-guest-${randomHex(16)}`, participantSecret: randomHex(24), role: 'guest', name: displayName(name), portable: true, shared: shared === true };
     try {
       await this._openPeer(this.session.participantId);
       return await this._connectGuest();
@@ -487,7 +488,7 @@ export class PortableRoomClient extends EventTarget {
     let sentLeave = false;
     try {
       if (this._connection?.open && this._records.get(this._connection)?.authenticated) {
-        this._sendPacket(this._connection, { kind: 'leave', closed: this.session?.role === 'host' });
+        this._sendPacket(this._connection, { kind: 'leave', closed: this.session?.role === 'host' && !this.session.shared });
         sentLeave = true;
       }
     } catch { /* Local cleanup does not depend on an already-failed network. */ }
@@ -498,7 +499,7 @@ export class PortableRoomClient extends EventTarget {
     if (this._joining) this._joining.reject(problem('This room has ended.', 410));
     // Give the ordered leave packet a chance to leave the RTCDataChannel
     // before destroying its transport, so the guest sees a closed room.
-    if (sentLeave) await new Promise((resolve) => setTimeout(resolve, 150));
+    if (sentLeave && !this.session?.shared) await new Promise((resolve) => setTimeout(resolve, 150));
     for (const connection of [...this._records.keys()]) this._closeConnection(connection);
     const peer = this._peer;
     this._peer = null;

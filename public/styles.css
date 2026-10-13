@@ -319,3 +319,5 @@ input::placeholder { color: #809e92; }
 @media (max-width: 759px) {
   .chat-panel.compact-chat { grid-template-rows: 26px minmax(0, 1fr) 42px 105px; }
 }
+:root.shared-room-entry #landing { display: none; }
+:root.shared-room-entry #room[hidden] { display: block; }

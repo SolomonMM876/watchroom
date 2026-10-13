@@ -6,6 +6,8 @@ Screen and tab audio sharing, camera and microphone chat, text chat and reaction
 
 Make a room and send its private invitation link to your partner. Keep the host tab open. Choose a browser tab and enable tab audio when sharing.
 
+Molomon can open one reusable shared room automatically after Google sign-in. Its private Firebase access document supplies the room ID and key at runtime. The shared invitation uses shared=1 in its fragment: the first arrival hosts, the second joins, and setup is skipped. Camera and microphone begin off. After a host leaves or refreshes, the remaining person tries to reopen the same room. Keep the private room key out of this public repository.
+
 The compact top bar leaves more space for the shared screen. The cameras start at the bottom left, directly left of chat and slightly overlapping the screen. Your smaller camera is nested in the partner camera’s bottom-right corner. Drag panel headers and resize from a corner. Layouts are saved in your browser; Reset layout restores the default. Reaction sounds can be disabled by either person.
 
 ## Updates

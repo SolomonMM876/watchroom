@@ -22,6 +22,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
+      - name: Check shared room lifecycle
+        run: node --test test/shared-room-test.mjs test/shared-lifecycle-test.mjs
       - name: Build website
         run: node scripts/build-website.mjs
       - uses: actions/configure-pages@v5

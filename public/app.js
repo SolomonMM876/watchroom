@@ -1,13 +1,22 @@
 import { WatchConnection } from './rtc.js';
 import { ReactionSounds } from './reaction-sounds.js';
 import { initWatchLayout } from './layout.js';
+import { joinSharedRoom } from './shared-room.js';
 
 const $ = (id) => document.getElementById(id);
 const SESSION_PREFIX = 'sofa:room:';
 const extensionMode = location.protocol === 'chrome-extension:';
 const portableMode = extensionMode || document.querySelector('meta[name="watchroom-transport"]')?.content === 'peerjs' || new URLSearchParams(location.search).get('portable') === '1';
+const launchParams = new URLSearchParams(location.hash.slice(1));
+const sharedMode = portableMode && launchParams.get('shared') === '1';
+const sharedInvite = sharedMode ? invitation() : null;
 const watchLayout = initWatchLayout();
 let portableClient = null;
+let entryGeneration = 0;
+let sharedEntering = false;
+let sharedPaused = false;
+let sharedError = '';
+let pollGeneration = 0;
 let entryMode = new URLSearchParams(location.hash.slice(1)).has('room') ? 'join' : 'make';
 const reactionTypes = {
   heart: { glyph: '♡', description: 'sent a heart', own: 'You sent a heart.', caption: 'Heart sent.' },
@@ -152,6 +161,54 @@ async function getPortableClient() {
   return portableClient;
 }
 
+function showSharedRoom() {
+  $('landing').hidden = true;
+  $('room').hidden = false;
+  $('room-title').textContent = 'Our watchroom';
+  $('invite-button').disabled = !session;
+  watchLayout.activate();
+  updateConnection();
+}
+
+async function startSharedRoom() {
+  if (sharedEntering) return;
+  const generation = ++entryGeneration;
+  const isCurrent = () => generation === entryGeneration;
+  sharedEntering = true;
+  sharedPaused = false;
+  sharedError = '';
+  await exitRoom({ serverClosed: true, showLanding: false, cancelEntry: false, preserveInvitation: true });
+  if (!isCurrent()) return;
+  showSharedRoom();
+  try {
+    const { PortableRoomClient } = await import('./portable.js');
+    if (!isCurrent()) return;
+    const name = (launchParams.get('name') || storage.read('sofa:name') || 'You').toString().trim().slice(0, 32) || 'You';
+    const result = await joinSharedRoom({
+      ...sharedInvite, name, iceServers: iceServers(), isCurrent,
+      createClient: () => {
+        const client = new PortableRoomClient();
+        portableClient = client;
+        client.addEventListener('warning', (event) => {
+          if (isCurrent() && !sharedEntering && session && !['unavailable-id', 'peer-unavailable'].includes(event.detail?.type)) toast(readableError(event.detail));
+        });
+        return client;
+      },
+    });
+    if (!isCurrent()) { await result.client.leave(); return; }
+    portableClient = result.client;
+    sharedEntering = false;
+    await enterRoom(result.data, name, { roomSecret: sharedInvite?.roomSecret });
+  } catch (error) {
+    if (!isCurrent()) return;
+    portableClient = null;
+    sharedError = readableError(error);
+    toast(sharedError);
+  } finally {
+    if (isCurrent()) { sharedEntering = false; updateConnection(); }
+  }
+}
+
 function roomCode() {
   const text = $('room-code').value.trim();
   const match = text.match(/^SOFA:([a-f\d]{16,128}):([a-f\d]{16,256})$/i);
@@ -173,9 +230,14 @@ function updateConnection() {
   if (peer) {
     label = connected ? 'Connected' : state === 'failed' ? 'Call couldn’t connect' : state === 'disconnected' ? 'Call interrupted' : 'Connecting…';
   }
+  if (sharedMode && !session) label = sharedEntering ? 'Opening our room…' : sharedPaused ? 'You left the room' : 'Room couldn’t connect';
   status.replaceChildren(Object.assign(document.createElement('span'), {}), document.createTextNode(label));
   status.className = `connection-status${connected ? ' connected' : peer && ['failed', 'disconnected'].includes(state) ? ' error' : ''}`;
-  $('reconnect-button').hidden = connected || (!peer && !(portableMode && session?.role === 'guest'));
+  $('reconnect-button').hidden = sharedMode && !session ? sharedEntering : connected || (!peer && !(portableMode && session?.role === 'guest'));
+  $('reconnect-button').textContent = sharedPaused ? 'Rejoin room' : 'Reconnect';
+  $('connection-status').title = sharedError;
+  for (const id of ['mic-button', 'camera-button']) $(id).disabled = !session;
+  for (const id of ['share-button', 'stage-share-button']) $(id).disabled = !session || (!!remoteScreen && !localScreen);
   document.querySelectorAll('[data-reaction]').forEach((button) => { button.disabled = !connected; });
   $('chat-input').disabled = !connected;
   $('chat-form').querySelector('button').disabled = !connected;
@@ -245,7 +307,7 @@ function renderScreen() {
   $('audio-status').textContent = stream ? mine ? screenAudio ? 'Tab audio is shared' : 'No tab audio selected' : 'Movie sound plays here' : '';
   const shareButton = $('share-button');
   shareButton.querySelector('span').textContent = mine ? 'Stop sharing' : remoteScreen ? 'Your partner is sharing' : 'Share a tab';
-  shareButton.disabled = !!remoteScreen && !mine;
+  shareButton.disabled = !session || (!!remoteScreen && !mine);
   attachMedia($('screen-video'), stream, { muted: mine, soundButton: 'enable-sound' });
   $('screen-video').volume = Number($('movie-volume').value) / 100;
   $('movie-volume').disabled = mine;
@@ -312,12 +374,13 @@ async function enterRoom(data, name, { resume = false, useDevices = false, roomS
   } else if (useDevices) {
     rtc.startDevices({ camera: true, mic: true }).catch(() => { updateDeviceState(rtc?.devices || {}); });
   }
-  if (session.role === 'host' && !resume) openInvite();
+  if (session.role === 'host' && !resume && !sharedMode) openInvite();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function startPolling() {
   if (polling) return;
+  ++pollGeneration;
   polling = true;
   pollFailures = 0;
   poll();
@@ -326,16 +389,22 @@ function startPolling() {
 async function poll() {
   if (!polling || !session) return;
   const roomId = session.roomId;
+  const generation = pollGeneration;
+  const roomSession = session;
+  const connection = rtc;
+  const isCurrent = () => polling && session === roomSession && rtc === connection && generation === pollGeneration;
   activePoll = new AbortController();
   let delay = 1000;
   try {
     const data = portableMode ? await portableClient.poll(cursor) : await api(`/api/rooms/${encodeURIComponent(roomId)}/events?after=${cursor}`, { signal: activePoll.signal });
-    if (!session || session.roomId !== roomId || !polling) return;
+    if (!isCurrent()) return;
     pollFailures = 0;
     if (data.closed) { await exitRoom({ serverClosed: true }); toast('The room has ended.'); return; }
     const change = updateRoster(data.participants);
+    if (sharedMode && session.role === 'guest' && !change?.newId) { void startSharedRoom(); return; }
     let reset = false;
     for (const event of data.events || []) {
+      if (!isCurrent()) return;
       cursor = Math.max(cursor, Number(event.id) || 0);
       const payload = event.payload;
       if (event.sender !== peer?.id || !payload) continue;
@@ -348,13 +417,15 @@ async function poll() {
       } else if (payload.description || Object.prototype.hasOwnProperty.call(payload, 'candidate')) {
         try { await rtc.receiveSignal(payload); } catch (error) { toast(readableError(error)); }
       }
+      if (!isCurrent()) return;
     }
+    if (!isCurrent()) return;
     cursor = Math.max(cursor, Number(data.cursor) || 0);
     saveSession();
     if (change?.changed && change.newId && session.role === 'host' && !reset) await rtc.retry();
   } catch (error) {
     if (error.name === 'AbortError') return;
-    if (!polling || !session || session.roomId !== roomId) return;
+    if (!isCurrent()) return;
     if ([401, 403, 404, 410].includes(error.status)) {
       await exitRoom({ serverClosed: true });
       toast('This invitation or room session has ended. Start a new room or ask your partner for a fresh invite.');
@@ -364,14 +435,16 @@ async function poll() {
     delay = Math.min(1000 * 2 ** Math.min(pollFailures, 3), 8000);
     if (pollFailures === 3) toast('The room service is temporarily unreachable. Your call may continue; we’ll keep trying to reconnect.');
   } finally {
-    activePoll = null;
-    if (polling && session?.roomId === roomId) pollTimer = setTimeout(poll, delay);
+    if (generation === pollGeneration) activePoll = null;
+    if (polling && session?.roomId === roomId && generation === pollGeneration) pollTimer = setTimeout(poll, delay);
   }
 }
 
-async function exitRoom({ serverClosed = false } = {}) {
+async function exitRoom({ serverClosed = false, showLanding = !sharedMode, cancelEntry = true, preserveInvitation = sharedMode } = {}) {
+  if (cancelEntry) { ++entryGeneration; sharedEntering = false; }
   const leaving = session;
   polling = false;
+  ++pollGeneration;
   clearTimeout(pollTimer);
   activePoll?.abort();
   if (!serverClosed && leaving) {
@@ -380,7 +453,7 @@ async function exitRoom({ serverClosed = false } = {}) {
       else await api(`/api/rooms/${encodeURIComponent(leaving.roomId)}/leave`, { method: 'POST', body: {} });
     } catch { /* Stop local capture even if a network request cannot finish. */ }
   }
-  if (serverClosed && portableMode) { try { await portableClient?.leave(); } catch { /* Capture still stops locally below. */ } }
+  if ((serverClosed || !leaving) && portableMode) { try { await portableClient?.leave(); } catch { /* Capture still stops locally below. */ } }
   ++rtcGeneration;
   rtc?.close();
   rtc = null;
@@ -395,10 +468,10 @@ async function exitRoom({ serverClosed = false } = {}) {
   for (const id of ['local-camera', 'remote-camera', 'screen-video']) $(id).srcObject = null;
   if (leaving) storage.remove(`${SESSION_PREFIX}${leaving.roomId}`);
   storage.remove('sofa:last-room');
-  if (leaving?.role === 'host' || serverClosed) history.replaceState(null, '', location.pathname + location.search);
-  $('room').hidden = true;
+  if (!preserveInvitation && (leaving?.role === 'host' || serverClosed)) history.replaceState(null, '', location.pathname + location.search);
+  $('room').hidden = showLanding;
   watchLayout.deactivate();
-  $('landing').hidden = false;
+  $('landing').hidden = !showLanding;
   document.body.classList.remove('theater-mode');
   for (const modal of document.querySelectorAll('dialog[open]')) modal.close();
   $('chat-log').replaceChildren();
@@ -406,16 +479,18 @@ async function exitRoom({ serverClosed = false } = {}) {
   updateDeviceState({ camera: false, mic: false });
   renderScreen();
   setLandingMode();
+  if (!showLanding) showSharedRoom();
 }
 
 function openInvite() {
   if (!session?.roomSecret) return;
   const url = new URL(location.href);
   url.hash = new URLSearchParams({ room: session.roomId, key: session.roomSecret }).toString();
+  if (sharedMode) url.hash = new URLSearchParams({ room: session.roomId, key: session.roomSecret, shared: '1', auto: '1' }).toString();
   $('invite-link').value = extensionMode ? `SOFA:${session.roomId}:${session.roomSecret}` : url.toString();
   $('invite-description').textContent = extensionMode ? 'Both people open Watchroom. Send this code to your partner and have them choose “Join room”. Keep the code private: anyone with it can join.' : 'Send this private link to your partner. Anyone with it can take the second seat, so keep it between you.';
   $('invite-label').textContent = extensionMode ? 'Your private room code' : 'Your private invitation link';
-  $('copy-status').textContent = portableMode ? 'Keep this tab open. Closing or refreshing the host’s tab ends this room.' : 'The room expires after 12 hours.';
+  $('copy-status').textContent = sharedMode ? 'Use this same room next time. Keep both tabs open while watching.' : portableMode ? 'Keep this tab open. Closing or refreshing the host’s tab ends this room.' : 'The room expires after 12 hours.';
   $('copy-invite').textContent = extensionMode ? 'Copy code' : 'Copy link';
   $('invite-dialog').showModal();
 }
@@ -668,8 +743,9 @@ $('fullscreen-button').addEventListener('click', async () => {
   } catch { toast('Fullscreen isn’t available here. Use theater mode for a larger screen.'); }
 });
 document.addEventListener('fullscreenchange', () => { $('fullscreen-button').setAttribute('aria-label', document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'); });
-$('leave-button').addEventListener('click', async () => { await exitRoom(); toast('You left the room.'); });
+$('leave-button').addEventListener('click', async () => { sharedPaused = true; await exitRoom(); updateConnection(); toast('You left the room.'); });
 $('reconnect-button').addEventListener('click', async () => {
+  if (sharedMode && (!session || (session.role === 'guest' && !peer))) { await startSharedRoom(); return; }
   try {
     if (portableMode && portableClient?.reconnect) await portableClient.reconnect(iceServers());
     await postEvent({ kind: 'peer-ready' });
@@ -714,10 +790,13 @@ window.addEventListener('hashchange', () => {
   }
 });
 window.addEventListener('pagehide', () => {
+  ++entryGeneration;
   saveSession();
   polling = false;
   clearTimeout(pollTimer);
   activePoll?.abort();
+  ++pollGeneration;
+  if (sharedMode) void portableClient?.leave();
   rtc?.close();
   reactionSounds.close();
   watchLayout.deactivate();
@@ -732,6 +811,7 @@ window.sofaApp = {
   get sounds() { return reactionSounds; },
   get layout() { return watchLayout; },
   portableMode,
+  sharedMode,
   exitRoom,
 };
 
@@ -747,7 +827,10 @@ updateConnection();
 const invite = invitation();
 const savedRoomId = invite?.roomId || storage.read('sofa:last-room');
 const saved = savedRoomId ? storage.read(`${SESSION_PREFIX}${savedRoomId}`) : null;
-if (!portableMode && saved?.participantId && saved?.participantSecret && (!invite || saved.roomSecret === invite.roomSecret)) {
+if (sharedMode) {
+  showSharedRoom();
+  void startSharedRoom();
+} else if (!portableMode && saved?.participantId && saved?.participantSecret && (!invite || saved.roomSecret === invite.roomSecret)) {
   session = saved;
   try {
     const data = await api(`/api/rooms/${encodeURIComponent(saved.roomId)}/events?after=${Number(saved.cursor) || 0}`);
