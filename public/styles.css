@@ -111,6 +111,18 @@ input::placeholder { color: #809e92; }
 .layout-editing video { pointer-events: none; }
 .screen-stage { position: relative; flex: 1; width: 100%; min-height: 0; overflow: hidden; background: #071314; isolation: isolate; }
 .screen-stage > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.watch-link-player { position: absolute; inset: 41px 0 0; background: #071314; }
+.watch-link-player > iframe, .watch-link-player > video { width: 100%; height: 100%; border: 0; display: block; object-fit: contain; }
+.watch-link-mode .stage-topbar { height: 41px; background: #0b2021; }
+.watch-link-mode .stage-bottom { display: none; }
+.watch-link-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; flex-shrink: 0; padding: 8px 29px 8px 10px; background: #102b2a; border-top: 1px solid #284a49; font-size: 10px; }
+.watch-link-bar > span { flex: 1; min-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #bed5c9; }
+.watch-link-bar a, #watch-link-dialog a { color: #b0d9c1; text-decoration: underline; text-underline-offset: 3px; }
+.watch-link-bar .quiet-button { font-size: 10px; }
+.watch-link-bar p { flex-basis: 100%; margin: 0; color: #97b0a4; font-size: 9px; line-height: 1.5; }
+.stage-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.layout-editing iframe { pointer-events: none; }
+#watch-link-submit { margin-top: 18px; }
 .stage-topbar { position: absolute; left: 0; top: 0; right: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px 8px; background: linear-gradient(#07120dd4, transparent); z-index: 3; }
 .stage-topbar > div { display: flex; gap: 5px; }
 .stage-topbar svg { width: 14px; height: 14px; }
@@ -126,7 +138,7 @@ input::placeholder { color: #809e92; }
 .screen-empty .stage-hint { margin: 13px 0 0; color: #7a9b8e; font-size: 9px; }
 .stage-bottom { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; gap: 10px; padding: 8px 12px; background: linear-gradient(transparent, #03110ac9); color: #c4decf; font-size: 9px; pointer-events: none; }
 .screen-controls { flex-shrink: 0; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; min-height: 42px; padding: 5px 29px 5px var(--screen-controls-inset, 10px); border-top: 1px solid #284a4966; background: #0d2524; }
-.screen-control-left { display: flex; align-items: center; gap: 12px; }
+.screen-control-left { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .screen-controls .secondary-button { min-height: 29px; padding: 6px 10px; font-size: 9px; }
 .screen-controls .quiet-button { font-size: 9px; }
 .movie-volume { display: flex; align-items: center; gap: 8px; color: #9bb4a7; font-size: 9px; }
@@ -200,7 +212,8 @@ input::placeholder { color: #809e92; }
 .poke-shake { animation: poke-shake .6s ease-in-out; }
 .blanket-sheet { position: absolute; bottom: -46%; left: -3%; width: 106%; height: 46%; border: 1px solid #a9d2b77a; border-top: 10px solid #abcdb6; border-radius: 27px 35px 0 0; background: repeating-linear-gradient(0deg, #79af91 0 23px, #659d8222 24px 25px), linear-gradient(110deg, #547f6a, #a0cbb0); box-shadow: 0 -7px 25px #071c2088; transform-origin: center bottom; animation: steal-blanket 3s ease-in-out forwards; }
 .blanket-sheet:after { content: ''; position: absolute; top: 17px; left: 0; right: 0; border-top: 1px dashed #d0e8c899; }
-.countdown-overlay { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; background: #071913bb; backdrop-filter: blur(6px); color: #bceccc; font-size: 100px; }
+.countdown-overlay { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; background: #071913bb; backdrop-filter: blur(6px); color: #bceccc; font-size: 100px; pointer-events: none; }
+.watch-link-mode .countdown-overlay { inset: 0 90px auto auto; width: 100px; height: 41px; background: none; backdrop-filter: none; font-size: 20px; }
 .modal { position: fixed; width: 465px; max-width: calc(100vw - 32px); padding: 32px; border: 1px solid #487264; border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 20px 80px #0008; }
 .modal::backdrop { background: #020b0ce0; backdrop-filter: blur(6px); }
 .modal-close { position: absolute; top: 12px; right: 12px; width: 26px; height: 26px; font-size: 26px; }

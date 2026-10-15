@@ -2,6 +2,7 @@ import { WatchConnection } from './rtc.js';
 import { ReactionSounds } from './reaction-sounds.js';
 import { initWatchLayout } from './layout.js';
 import { joinSharedRoom } from './shared-room.js';
+import { parseWatchLink } from './watch-link.js';
 
 const $ = (id) => document.getElementById(id);
 const SESSION_PREFIX = 'sofa:room:';
@@ -46,6 +47,12 @@ let countdownTimer = null;
 let toastTimer = null;
 let rtcGeneration = 0;
 let recentMessages = new Set();
+let reconnecting = false;
+let watchLinkSelection = null;
+let activeWatchLink = null;
+let renderedWatchUrl = null;
+let screenShareIntent = null;
+const watchLinkOptions = { appOrigin: /^https?:$/.test(location.protocol) ? location.origin : null };
 
 const storage = {
   read(key) { try { return JSON.parse(sessionStorage.getItem(key)); } catch { return null; } },
@@ -177,7 +184,7 @@ async function startSharedRoom() {
   sharedEntering = true;
   sharedPaused = false;
   sharedError = '';
-  await exitRoom({ serverClosed: true, showLanding: false, cancelEntry: false, preserveInvitation: true });
+  await exitRoom({ serverClosed: true, showLanding: false, cancelEntry: false, preserveInvitation: true, preserveWatchLink: true });
   if (!isCurrent()) return;
   showSharedRoom();
   try {
@@ -225,7 +232,7 @@ function roomCode() {
 function updateConnection() {
   const status = $('connection-status');
   const state = rtc?.state || 'connecting';
-  const connected = !!peer && state === 'connected';
+  const connected = !!peer && !!rtc?.messagesReady;
   let label = portableMode && session?.role === 'guest' ? 'Partner disconnected' : 'Waiting for partner';
   if (peer) {
     label = connected ? 'Connected' : state === 'failed' ? 'Call couldn’t connect' : state === 'disconnected' ? 'Call interrupted' : 'Connecting…';
@@ -233,11 +240,13 @@ function updateConnection() {
   if (sharedMode && !session) label = sharedEntering ? 'Opening our room…' : sharedPaused ? 'You left the room' : 'Room couldn’t connect';
   status.replaceChildren(Object.assign(document.createElement('span'), {}), document.createTextNode(label));
   status.className = `connection-status${connected ? ' connected' : peer && ['failed', 'disconnected'].includes(state) ? ' error' : ''}`;
-  $('reconnect-button').hidden = sharedMode && !session ? sharedEntering : connected || (!peer && !(portableMode && session?.role === 'guest'));
+  $('reconnect-button').hidden = !session && (!sharedMode || sharedEntering);
+  $('reconnect-button').disabled = reconnecting;
   $('reconnect-button').textContent = sharedPaused ? 'Rejoin room' : 'Reconnect';
   $('connection-status').title = sharedError;
   for (const id of ['mic-button', 'camera-button']) $(id).disabled = !session;
-  for (const id of ['share-button', 'stage-share-button']) $(id).disabled = !session || (!!remoteScreen && !localScreen);
+  for (const id of ['share-button', 'stage-share-button']) $(id).disabled = !session || !!screenShareIntent || (!!remoteScreen && !localScreen);
+  for (const id of ['watch-link-button', 'stage-link-button', 'change-watch-link', 'stop-watch-link', 'watch-link-submit']) $(id).disabled = !session || (!!peer && !connected);
   document.querySelectorAll('[data-reaction]').forEach((button) => { button.disabled = !connected; });
   $('chat-input').disabled = !connected;
   $('chat-form').querySelector('button').disabled = !connected;
@@ -297,21 +306,98 @@ function attachMedia(video, stream, { muted = false, soundButton } = {}) {
 }
 
 function renderScreen() {
-  const stream = localScreen || remoteScreen;
+  renderWatchPlayer();
+  const stream = activeWatchLink ? null : localScreen || remoteScreen;
   const mine = !!localScreen;
-  $('screen-empty').hidden = !!stream;
+  $('screen-stage').classList.toggle('watch-link-mode', !!activeWatchLink);
+  $('screen-empty').hidden = !!stream || !!activeWatchLink;
   $('screen-video').hidden = !stream;
-  $('screen-indicator').className = stream ? 'active' : '';
-  $('screen-label').textContent = stream ? 'SCREEN SHARE ACTIVE' : 'SCREEN SHARE';
+  $('screen-indicator').className = stream || activeWatchLink ? 'active' : '';
+  $('screen-label').textContent = activeWatchLink ? 'DIRECT LINK' : stream ? 'SCREEN SHARE ACTIVE' : 'WATCH TOGETHER';
   $('stage-owner').textContent = stream ? mine ? 'Your shared tab · preview is muted' : `${peer?.name || 'Your partner'}’s shared tab` : '';
   $('audio-status').textContent = stream ? mine ? screenAudio ? 'Tab audio is shared' : 'No tab audio selected' : 'Movie sound plays here' : '';
   const shareButton = $('share-button');
   shareButton.querySelector('span').textContent = mine ? 'Stop sharing' : remoteScreen ? 'Your partner is sharing' : 'Share a tab';
-  shareButton.disabled = !session || (!!remoteScreen && !mine);
+  shareButton.disabled = !session || !!screenShareIntent || (!!remoteScreen && !mine);
   attachMedia($('screen-video'), stream, { muted: mine, soundButton: 'enable-sound' });
   $('screen-video').volume = Number($('movie-volume').value) / 100;
-  $('movie-volume').disabled = mine;
-  $('movie-volume').title = mine ? 'Adjust your movie volume in the shared tab. This slider controls received movie audio.' : 'Received movie audio volume';
+  if (activeWatchLink?.kind === 'video') $('watch-link-video').volume = Number($('movie-volume').value) / 100;
+  $('movie-volume').disabled = mine || activeWatchLink?.kind === 'page';
+  $('movie-volume').title = activeWatchLink?.kind === 'page' ? 'Use the volume control inside the webpage’s player.' : mine ? 'Adjust your movie volume in the shared tab. This slider controls received movie audio.' : 'Movie audio volume';
+}
+
+function clearWatchPlayer() {
+  const video = $('watch-link-video');
+  if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
+  $('watch-link-player').replaceChildren();
+  renderedWatchUrl = null;
+}
+
+function renderWatchPlayer() {
+  const link = activeWatchLink;
+  $('watch-link-player').hidden = !link;
+  $('watch-link-bar').hidden = !link;
+  if (!link) {
+    if (renderedWatchUrl) clearWatchPlayer();
+    $('watch-link-external').removeAttribute('href');
+    return;
+  }
+  $('watch-link-hostname').textContent = link.hostname;
+  $('watch-link-external').href = link.url;
+  if (renderedWatchUrl === link.embedUrl) return;
+  clearWatchPlayer();
+  const player = document.createElement(link.kind === 'video' ? 'video' : 'iframe');
+  player.id = link.kind === 'video' ? 'watch-link-video' : 'watch-link-frame';
+  if (link.kind === 'video') {
+    player.controls = true;
+    player.playsInline = true;
+    player.preload = 'metadata';
+    player.volume = Number($('movie-volume').value) / 100;
+  } else {
+    player.title = `Watch page from ${link.hostname}`;
+    player.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-presentation allow-popups');
+    player.setAttribute('allow', 'autoplay; fullscreen; encrypted-media; picture-in-picture');
+    const embedHost = new URL(link.embedUrl).hostname;
+    player.referrerPolicy = ['www.youtube.com', 'youtube.com', 'www.youtube-nocookie.com', 'youtube-nocookie.com'].includes(embedHost) ? 'strict-origin' : 'no-referrer';
+    player.allowFullscreen = true;
+  }
+  player.src = link.embedUrl;
+  $('watch-link-player').append(player);
+  renderedWatchUrl = link.embedUrl;
+}
+
+function applyWatchLink(message) {
+  if (!Number.isSafeInteger(message.revision) || message.revision < 1 || message.revision >= Number.MAX_SAFE_INTEGER
+    || typeof message.id !== 'string' || !message.id.length || message.id.length > 64 || !Number.isFinite(message.time)) return false;
+  // Re-send the same selection after reconnect without replaying it. Equal
+  // revisions use a stable tie-break when both people choose at once.
+  const current = watchLinkSelection;
+  if (current && (message.revision < current.revision || (message.revision === current.revision && message.id <= current.id))) return false;
+  let link;
+  try { link = message.url === null ? null : parseWatchLink(message.url, watchLinkOptions); } catch { return false; }
+  watchLinkSelection = { type: 'watch-link', url: link?.url ?? null, revision: message.revision, id: message.id, time: message.time };
+  activeWatchLink = link;
+  clearWatchPlayer();
+  if (link && localScreen) rtc?.stopScreen();
+  renderScreen();
+  updateConnection();
+  return true;
+}
+
+function chooseWatchLink(url) {
+  if (!session) return false;
+  const link = url === null ? null : parseWatchLink(url, watchLinkOptions);
+  const payload = { type: 'watch-link', url: link?.url ?? null, revision: (watchLinkSelection?.revision || 0) + 1 };
+  const message = peer ? sendMessage(payload) : { ...payload, id: crypto.randomUUID(), time: Date.now() };
+  if (!message) return false;
+  return applyWatchLink(message);
+}
+
+function openWatchLink() {
+  if (!session) return;
+  $('watch-link-url').value = activeWatchLink?.url || 'https://ramoflix.net/';
+  $('watch-link-url').setCustomValidity('');
+  $('watch-link-dialog').showModal();
 }
 
 function buildConnection() {
@@ -331,8 +417,18 @@ function buildConnection() {
     $('remote-camera-placeholder').hidden = remoteDeviceState.camera;
     $('remote-placeholder-text').textContent = remoteDeviceState.camera ? 'Connecting camera…' : 'Camera is off';
   });
-  on('local-screen', (stream) => { localScreen = stream; renderScreen(); });
-  on('remote-screen', (stream) => { remoteScreen = stream; renderScreen(); });
+  on('local-screen', (stream) => {
+    localScreen = stream;
+    if (stream && ((screenShareIntent && screenShareIntent.selectionId !== (watchLinkSelection?.id ?? null))
+      || (activeWatchLink && !chooseWatchLink(null)))) {
+      rtc.stopScreen();
+      toast('The shared link changed or the connection was interrupted. Try sharing again when you’re ready.');
+      return;
+    }
+    renderScreen();
+    updateConnection();
+  });
+  on('remote-screen', (stream) => { remoteScreen = stream; renderScreen(); updateConnection(); });
   on('screen-audio', (hasAudio) => {
     screenAudio = hasAudio;
     renderScreen();
@@ -342,6 +438,7 @@ function buildConnection() {
     updateConnection();
     if (state === 'connected') {
       appendSystem('Connected.');
+      if (watchLinkSelection) rtc.sendMessage(watchLinkSelection);
     } else if (state === 'failed') toast('The call couldn’t connect across your networks. Try Reconnect, or add a TURN relay in connection settings.');
   });
   on('message', receiveMessage);
@@ -440,7 +537,7 @@ async function poll() {
   }
 }
 
-async function exitRoom({ serverClosed = false, showLanding = !sharedMode, cancelEntry = true, preserveInvitation = sharedMode } = {}) {
+async function exitRoom({ serverClosed = false, showLanding = !sharedMode, cancelEntry = true, preserveInvitation = sharedMode, preserveWatchLink = false } = {}) {
   if (cancelEntry) { ++entryGeneration; sharedEntering = false; }
   const leaving = session;
   polling = false;
@@ -462,6 +559,12 @@ async function exitRoom({ serverClosed = false, showLanding = !sharedMode, cance
   peer = null;
   cursor = 0;
   localScreen = remoteScreen = null;
+  screenShareIntent = null;
+  if (!preserveWatchLink) {
+    activeWatchLink = null;
+    watchLinkSelection = null;
+    clearWatchPlayer();
+  }
   clearInterval(countdownTimer);
   countdownTimer = null;
   $('countdown-overlay').hidden = true;
@@ -625,10 +728,13 @@ function receiveMessage(message) {
   if (message.type === 'chat' && typeof message.text === 'string' && message.text.length <= 2000) appendChat(message);
   else if (message.type === 'reaction' && Object.prototype.hasOwnProperty.call(reactionTypes, message.reaction)) showReaction(message.reaction, false, message.sound === true);
   else if (message.type === 'countdown' && Number.isFinite(message.goAt) && Math.abs(message.goAt - Date.now()) < 30000) startCountdown(message.goAt);
+  else if (message.type === 'watch-link' && applyWatchLink(message)) {
+    appendSystem(message.url === null ? 'Your partner closed the shared link.' : `${peer?.name || 'Your partner'} opened a link for both of you.`);
+  }
 }
 
 function sendMessage(payload) {
-  if (!session || !peer || rtc?.state !== 'connected') { toast('Connect with your partner first.'); return null; }
+  if (!session || !peer || !rtc?.messagesReady) { toast('Connect with your partner first.'); return null; }
   const message = { ...payload, id: crypto.randomUUID(), time: Date.now() };
   if (!rtc.sendMessage(message)) { toast('The chat connection isn’t ready. Try Reconnect.'); return null; }
   return message;
@@ -674,13 +780,35 @@ $('copy-invite').addEventListener('click', async () => {
 
 function shareScreen() {
   if (!rtc) return;
+  if (screenShareIntent) return;
   if (localScreen) { rtc.stopScreen(); return; }
   if (remoteScreen) { toast('Your partner is sharing. They need to stop before you can share.'); return; }
+  if (activeWatchLink && peer && !rtc.messagesReady) { toast('Reconnect before switching from a shared link to screen sharing.'); return; }
   // Keep capture directly in the click handler so the browser recognizes the user's gesture.
-  rtc.shareScreen().catch(() => {});
+  const intent = { selectionId: watchLinkSelection?.id ?? null };
+  screenShareIntent = intent;
+  const sharing = rtc.shareScreen();
+  updateConnection();
+  sharing.catch(() => {}).finally(() => {
+    if (screenShareIntent === intent) { screenShareIntent = null; renderScreen(); updateConnection(); }
+  });
 }
 $('share-button').addEventListener('click', shareScreen);
 $('stage-share-button').addEventListener('click', shareScreen);
+for (const id of ['watch-link-button', 'stage-link-button', 'change-watch-link']) $(id).addEventListener('click', openWatchLink);
+$('watch-link-url').addEventListener('input', () => { $('watch-link-url').setCustomValidity(''); });
+$('watch-link-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  try {
+    if (!chooseWatchLink($('watch-link-url').value)) return;
+    $('watch-link-dialog').close();
+    appendSystem(peer ? 'You opened a link for both of you.' : 'Link ready. Your partner will open it when they connect.');
+  } catch (error) {
+    $('watch-link-url').setCustomValidity(readableError(error));
+    $('watch-link-url').reportValidity();
+  }
+});
+$('stop-watch-link').addEventListener('click', () => { if (chooseWatchLink(null)) appendSystem('You closed the shared link.'); });
 $('mic-button').addEventListener('click', async () => {
   if (!rtc) return;
   if (deviceState.mic) rtc.setMic(false);
@@ -695,6 +823,8 @@ $('camera-button').addEventListener('click', async () => {
 });
 $('movie-volume').addEventListener('input', (event) => {
   $('screen-video').volume = Number(event.target.value) / 100;
+  const video = $('watch-link-video');
+  if (video) video.volume = Number(event.target.value) / 100;
   $('movie-volume-value').textContent = `${event.target.value}%`;
   if (localScreen) toast('Your preview is muted to avoid echo. Adjust your streaming player for your own movie volume.');
 });
@@ -745,13 +875,17 @@ $('fullscreen-button').addEventListener('click', async () => {
 document.addEventListener('fullscreenchange', () => { $('fullscreen-button').setAttribute('aria-label', document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'); });
 $('leave-button').addEventListener('click', async () => { sharedPaused = true; await exitRoom(); updateConnection(); toast('You left the room.'); });
 $('reconnect-button').addEventListener('click', async () => {
-  if (sharedMode && (!session || (session.role === 'guest' && !peer))) { await startSharedRoom(); return; }
+  if (reconnecting) return;
+  reconnecting = true;
+  updateConnection();
   try {
+    if (sharedMode && (!session || (session.role === 'guest' && !peer))) { await startSharedRoom(); return; }
     if (portableMode && portableClient?.reconnect) await portableClient.reconnect(iceServers());
     await postEvent({ kind: 'peer-ready' });
     if (rtc?.reset) await rtc.reset(); else await rtc?.retry();
     toast('Reconnecting…');
   } catch (error) { toast(readableError(error)); }
+  finally { reconnecting = false; updateConnection(); }
 });
 $('settings-button').addEventListener('click', () => {
   const turn = storage.read('sofa:turn') || {};
@@ -810,6 +944,7 @@ window.sofaApp = {
   get portable() { return portableClient; },
   get sounds() { return reactionSounds; },
   get layout() { return watchLayout; },
+  get activeWatchLink() { return activeWatchLink; },
   portableMode,
   sharedMode,
   exitRoom,

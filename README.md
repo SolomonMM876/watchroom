@@ -2,7 +2,9 @@
 
 [Open Watchroom](https://SolomonMM876.github.io/watchroom/)
 
-Screen and tab audio sharing, camera and microphone chat, text chat and reactions for two people in desktop Brave or Chrome.
+Direct shared links, screen and tab audio sharing, camera and microphone chat, text chat and reactions for two people in desktop Brave or Chrome.
+
+Open a link lets either person send a movie, episode or webpage address. Each device loads that page directly inside Watchroom. Cross-origin browsing stays local, so paste a new movie or episode link to change it for both. The countdown cues manual playback. Open in new tab is always available if a site blocks embedding or its player does not work inside the room. YouTube and Vimeo links use their official embed players; direct MP4/WebM/OGV files use a native player. Links stay in room memory and are shared with a joining or reconnecting partner.
 
 Make a room and send its private invitation link to your partner. Keep the host tab open. Choose a browser tab and enable tab audio when sharing.
 
@@ -18,6 +20,6 @@ For a local build, run node scripts/build-website.mjs with Node.js 22 or newer. 
 
 ## Connection
 
-GitHub Pages hosts the website files. Public PeerJS Cloud provides connection signaling; media and chat travel over WebRTC. Both people need internet access. A TURN relay may be required on some networks; none is included. Camera, mic and sharing require browser permission and HTTPS or localhost. Protected video can prevent capture.
+GitHub Pages hosts the website files. Public PeerJS Cloud provides connection signaling; media and chat travel over WebRTC. Both people need internet access. Connected means both media transport and the message channel are ready. Reconnect remains available if controls or media stop responding, and capture permissions are preserved during reconnection. A TURN relay may be required on some networks; none is included. Camera, mic and sharing require browser permission and HTTPS or localhost. Protected video can prevent capture.
 
 PeerJS 1.5.5 is bundled under its MIT license in public/vendor/PEERJS-LICENSE.txt.

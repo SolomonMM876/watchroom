@@ -86,7 +86,7 @@ export class WatchConnection extends EventTarget {
     };
     pc.ontrack = (event) => this._receiveTrack(event, pc);
     pc.ondatachannel = ({ channel }) => this._attachChannel(channel, pc);
-    pc.onconnectionstatechange = () => this._connectionStateChanged();
+    pc.onconnectionstatechange = () => this._connectionStateChanged(pc);
     pc.oniceconnectionstatechange = () => {
       // Some browsers report a useful ICE failure before the overall state.
       if (this.connection === pc && pc.iceConnectionState === "failed") this._setState("failed");
@@ -113,6 +113,24 @@ export class WatchConnection extends EventTarget {
 
   _assertOpen() {
     if (this.closed) throw new Error("This room connection has ended.");
+  }
+
+  get messagesReady() {
+    return !this.closed && this.connection.connectionState === "connected" && this._channel?.readyState === "open";
+  }
+
+  _syncState(pc = this.connection) {
+    if (this.closed || this.connection !== pc) return;
+    const state = pc.connectionState;
+    if (state === "failed") this._setState("failed");
+    else if (state === "disconnected" || state === "closed" || ["closing", "closed"].includes(this._channel?.readyState)) this._setState("disconnected");
+    else if (this.messagesReady) {
+      const becameConnected = this.state !== "connected";
+      this._setState("connected");
+      // The media transport may become ready after the channel's open event.
+      // Publish device state at either ordering's first usable connection.
+      if (becameConnected) this._sendControl();
+    } else this._setState("connecting");
   }
 
   _signal(payload, generation = this._generation) {
@@ -255,21 +273,35 @@ export class WatchConnection extends EventTarget {
   }
 
   _attachChannel(channel, pc = this.connection) {
-    if (this.connection !== pc) { channel.close(); return; }
-    if (this._channel && this._channel !== channel) this._channel.close();
+    if (this.closed || this.connection !== pc) { channel.close(); return; }
+    const previous = this._channel;
     this._channel = channel;
+    if (previous && previous !== channel) {
+      previous.onopen = previous.onclose = previous.onclosing = previous.onmessage = previous.onerror = null;
+      previous.close();
+    }
+    const isCurrent = () => !this.closed && this.connection === pc && this._channel === channel;
     channel.onopen = () => {
-      this._sendControl();
-      this._setState("connected");
+      if (!isCurrent()) return;
+      const wasConnected = this.state === "connected";
+      this._syncState(pc);
+      // A replacement channel can arrive already open while media remains
+      // connected. Its partner still needs our current device state.
+      if (wasConnected) this._sendControl();
     };
-    channel.onclose = () => {
-      if (!this.closed && this.connection.connectionState !== "failed") this._setState("disconnected");
+    channel.onclose = channel.onclosing = () => {
+      if (isCurrent()) this._syncState(pc);
     };
     channel.onerror = () => {
+      if (!isCurrent()) return;
+      // Recover a broken control channel explicitly, keeping camera and tab
+      // captures running so Reconnect can reuse their granted permissions.
+      channel.close();
+      this._syncState(pc);
       this._emit("error", new Error("The chat connection was interrupted. Use Reconnect to try again."));
     };
     channel.onmessage = ({ data }) => {
-      if (this.connection !== pc) return;
+      if (!isCurrent()) return;
       if (typeof data !== "string" || data.length > MAX_MESSAGE_BYTES) return;
       let payload;
       try { payload = JSON.parse(data); } catch { return; }
@@ -287,10 +319,12 @@ export class WatchConnection extends EventTarget {
         this._emit("message", payload);
       }
     };
+    if (channel.readyState === "open") channel.onopen();
+    else this._syncState(pc);
   }
 
   sendMessage(payload) {
-    if (this.closed || this._channel?.readyState !== "open" || this._channel.bufferedAmount > 256 * 1024) return false;
+    if (!this.messagesReady || this._channel.bufferedAmount > 256 * 1024) return false;
     try {
       const text = JSON.stringify(payload);
       if (typeof text !== "string" || new TextEncoder().encode(text).length > MAX_MESSAGE_BYTES) return false;
@@ -466,23 +500,20 @@ export class WatchConnection extends EventTarget {
     this._applyLocalTracks().catch((error) => this._emit("error", asError(error)));
   }
 
-  _connectionStateChanged() {
-    if (this.closed) return;
+  _connectionStateChanged(pc = this.connection) {
+    if (this.closed || this.connection !== pc) return;
     clearTimeout(this._disconnectTimer);
     this._disconnectTimer = null;
-    const state = this.connection.connectionState;
-    if (state === "connected") this._setState("connected");
-    else if (state === "failed") this._setState("failed");
-    else if (state === "disconnected") {
-      this._setState("disconnected");
+    this._syncState(pc);
+    if (pc.connectionState === "disconnected") {
       // Short network interruptions often recover by themselves. If they do
       // not, the host makes one fresh ICE attempt without stopping capture.
       this._disconnectTimer = setTimeout(() => {
-        if (!this.closed && this.connection.connectionState === "disconnected" && this.role === "host") {
-          this.connection.restartIce();
+        if (!this.closed && this.connection === pc && pc.connectionState === "disconnected" && this.role === "host") {
+          pc.restartIce();
         }
       }, 6_000);
-    } else if (state !== "closed") this._setState("connecting");
+    }
   }
 
   async retry() {
@@ -541,7 +572,7 @@ export class WatchConnection extends EventTarget {
     clearTimeout(this._disconnectTimer);
     this._disconnectTimer = null;
     if (this._channel) {
-      this._channel.onopen = this._channel.onclose = this._channel.onmessage = this._channel.onerror = null;
+      this._channel.onopen = this._channel.onclose = this._channel.onclosing = this._channel.onmessage = this._channel.onerror = null;
       this._channel.close();
     }
     const pc = this.connection;
