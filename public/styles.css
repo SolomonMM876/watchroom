@@ -94,7 +94,7 @@ input::placeholder { color: #809e92; }
 .watch-guide p { position: absolute; top: 19px; right: 0; width: 290px; margin: 0; padding: 15px; border: 1px solid #416b58; border-radius: 7px; background: #13352a; box-shadow: 0 9px 25px #0005; color: #bfd6c5; white-space: normal; line-height: 1.7; font-size: 11px; z-index: 30; }
 .watch-workspace { position: relative; height: calc(100dvh - 71px); min-height: 360px; overflow: hidden; border-radius: 9px; isolation: isolate; }
 .workspace-panel { position: absolute; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 5px 20px #010b0d22; }
-.screen-panel { left: 0; top: 0; width: 100%; height: calc(100% - 156px); display: flex; flex-direction: column; z-index: 1; }
+.screen-panel { left: 0; top: 0; width: 100%; height: 100%; display: flex; flex-direction: column; z-index: 1; }
 .camera-panel { display: flex; flex-direction: column; z-index: 3; }
 .partner-panel { left: 0; bottom: 0; width: 300px; height: 214px; }
 .self-panel { left: 160px; bottom: 30px; width: 132px; height: 109px; }
@@ -161,24 +161,7 @@ input::placeholder { color: #809e92; }
 .self-panel .camera-placeholder small { font-size: 7px; }
 .self-panel .camera-label { padding: 5px 7px; font-size: 8px; }
 .self-panel .camera-you { font-size: 6px; }
-.chat-panel { left: 308px; bottom: 0; width: calc(100% - 308px); height: 148px; display: grid; grid-template-columns: minmax(0, 1fr) 330px; grid-template-rows: 26px minmax(0, 1fr) 42px; container-type: inline-size; container-name: chat-dock; z-index: 2; }
-.chat-heading { grid-column: 1 / -1; grid-row: 1; }
-.chat-log { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 7px; min-height: 0; overflow-y: auto; padding: 6px 12px 0; scrollbar-width: thin; scrollbar-color: #406652 transparent; }
-.chat-welcome { margin: auto; text-align: center; color: #87a897; }
-.chat-welcome p { margin: 0; font-size: 11px; }
-.chat-welcome small { font-size: 9px; color: #719283; }
-.chat-message { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; max-width: 83%; flex-shrink: 0; }
-.chat-message.own { align-self: flex-end; align-items: flex-end; }
-.chat-message-meta { display: flex; gap: 8px; color: #90ad9e; font-size: 8px; padding: 0 2px; }
-.chat-message-text { max-width: 100%; padding: 5px 9px; border: 1px solid #315e4e; border-radius: 0 6px 6px 6px; background: #193a34; color: var(--text); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
-.own .chat-message-text { border-color: #4b7b5b; border-radius: 6px 0 6px 6px; background: #234c3a; color: #d6eed9; }
-.chat-system { flex-shrink: 0; padding: 2px 0; color: #90ad9e; font-size: 9px; text-align: center; }
-.chat-form { grid-column: 1; grid-row: 3; display: flex; align-items: center; gap: 7px; min-width: 0; margin: 5px 12px 7px; padding: 3px 4px; border: 1px solid #31594b; border-radius: 5px; background: #081d1acc; }
-.chat-form input { flex: 1; min-width: 0; height: 25px; padding: 3px 5px; border: 0; background: none; color: var(--text); font-size: 11px; outline-offset: 0; }
-.chat-form input:disabled { opacity: .8; }
-.chat-form button { display: grid; place-items: center; width: 25px; height: 25px; padding: 4px; border: 0; border-radius: 4px; background: var(--accent); color: #07251c; }
-.chat-form svg { width: 14px; height: 14px; }
-.reaction-bar { grid-column: 2; grid-row: 2 / 4; min-width: 0; padding: 8px 10px; border-left: 1px solid #284a4999; }
+.reaction-bar { min-width: 0; padding: 0; }
 .eyebrow { margin: 0 0 6px; color: #89a897; font-size: 8px; font-weight: 500; letter-spacing: .9px; }
 .reaction-buttons { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
 .reaction-buttons button { display: flex; align-items: center; flex-direction: column; gap: 2px; min-width: 0; min-height: 54px; padding: 5px 2px 4px; border: 1px solid #355c48; border-radius: 5px; background: #17352c; color: #b4d0bc; }
@@ -195,14 +178,7 @@ input::placeholder { color: #809e92; }
 .wake-prompt > div { display: flex; align-items: center; gap: 11px; }
 .wake-prompt .secondary-button { min-height: 28px; padding: 6px 9px; font-size: 10px; }
 .wake-prompt .quiet-button { font-size: 10px; }
-@container chat-dock (max-width: 520px) {
-  .chat-log { grid-column: 1 / -1; }
-  .chat-form { grid-column: 1 / -1; }
-  .reaction-bar { grid-column: 1 / -1; grid-row: 4; border-left: 0; border-top: 1px solid #284a4966; padding: 7px 11px; }
-  .reaction-bar .eyebrow { display: none; }
-  .reaction-buttons button { min-height: 42px; padding: 4px 2px; }
-  .reaction-buttons small { font-size: 7px; }
-}
+
 .sound-prompt { position: absolute; left: 50%; top: 50%; z-index: 4; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid #91c8a3; border-radius: 6px; background: #204734eb; box-shadow: 0 8px 22px #0008; color: #e0f4df; font-size: 12px; white-space: nowrap; }
 .sound-prompt svg { width: 17px; height: 17px; }
 .camera-tile .sound-prompt { font-size: 9px; padding: 7px 9px; }
@@ -228,13 +204,6 @@ input::placeholder { color: #809e92; }
 .two-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 #settings-form > .primary-button { width: 100%; margin-top: 24px; }
 .toast { position: fixed; left: 50%; bottom: 22px; z-index: 40; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 11px 17px; border: 1px solid #568c73; border-radius: 7px; background: #133c30ee; backdrop-filter: blur(8px); color: #d1f3df; box-shadow: 0 8px 30px #0005; font-size: 12px; }
-.theater-mode .screen-panel { left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important; }
-.theater-mode .camera-panel, .theater-mode .chat-panel { display: none !important; }
-.theater-mode .screen-panel .panel-resize { display: none; }
-.theater-mode .screen-controls { padding-left: 10px; }
-.screen-stage:fullscreen { position: fixed; inset: 0; width: 100vw; height: 100vh; border: 0; border-radius: 0; }
-.screen-stage:fullscreen .screen-handle { visibility: hidden; }
-.screen-stage:fullscreen .screen-empty h2 { font-size: 35px; }
 @keyframes float-reaction { 0% { transform: translateY(0) rotate(-10deg) scale(.5); opacity: 0; } 15% { opacity: 1; transform: translateY(-20px) rotate(6deg) scale(1); } 80% { opacity: 1; } 100% { transform: translateY(-260px) rotate(-10deg) scale(1.3); opacity: 0; } }
 @keyframes caption { 0% { opacity: 0; } 15%, 85% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes poke-shake { 10%, 70% { transform: translateX(-7px) rotate(-1deg); } 30%, 90% { transform: translateX(7px) rotate(1deg); } 50% { transform: translateX(-5px); } }
@@ -288,10 +257,7 @@ input::placeholder { color: #809e92; }
   .panel-handle { cursor: default; }
   .panel-handle:disabled { opacity: 1; }
   .panel-grip, .panel-resize { display: none; }
-  .chat-panel { grid-column: 1 / -1; height: 360px !important; grid-template-columns: minmax(0, 1fr); grid-template-rows: 26px minmax(0, 1fr) 42px 105px; }
-  .chat-log { grid-column: 1; }
-  .chat-form { grid-column: 1; }
-  .reaction-bar { grid-column: 1; grid-row: 4; padding: 7px 10px; border-left: 0; border-top: 1px solid #284a4966; }
+  .reaction-bar { padding: 0; }
   .reaction-bar .eyebrow { display: none; }
   .reaction-buttons button { min-height: 49px; }
   .reaction-buttons small { font-size: 7px; }
@@ -307,8 +273,6 @@ input::placeholder { color: #809e92; }
   .live-label { font-size: 6px; }
   .stage-topbar .icon-button { padding: 4px; }
   .countdown-overlay { font-size: 75px; }
-  .theater-mode .screen-panel { height: auto !important; }
-  .theater-mode .screen-stage { min-height: 65dvh; aspect-ratio: auto; }
 }
 @media (max-width: 420px) {
   .room-heading-actions { flex-basis: 100%; justify-content: space-between; }
@@ -328,9 +292,38 @@ input::placeholder { color: #809e92; }
   *, *:before, *:after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   .blanket-sheet { animation: none; opacity: 0; }
 }
-.chat-panel.compact-chat { grid-template-columns: minmax(0, 1fr); grid-template-rows: 26px minmax(0, 1fr) 38px 82px; }
-@media (max-width: 759px) {
-  .chat-panel.compact-chat { grid-template-rows: 26px minmax(0, 1fr) 42px 105px; }
-}
 :root.shared-room-entry #landing { display: none; }
 :root.shared-room-entry #room[hidden] { display: block; }
+
+/* Keep the webpage large; camera tiles float over its lower corner. */
+.room-active { display: flex; flex-direction: column; height: 100dvh; min-height: 0; overflow: hidden; }
+.room-active > .site-header { flex: 0 0 auto; }
+.room-active .watch-room { display: flex; flex: 1; min-height: 0; flex-direction: column; padding-bottom: 8px; }
+.room-heading { flex-shrink: 0; }
+.watch-workspace { flex: 1; width: 100%; height: auto; min-height: 0; }
+.fullscreen-toggle { min-height: 26px; padding: 4px 6px; font-size: 9px; }
+.fullscreen-toggle svg { width: 14px; height: 14px; }
+.reactions-popover { position: fixed; inset: auto 16px 65px auto; width: 340px; max-width: calc(100vw - 24px); margin: 0; padding: 15px; border: 1px solid #487264; border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 12px 50px #0008; }
+.reactions-popover::backdrop { background: transparent; }
+.awake-prompt-host { position: fixed; right: 18px; top: 74px; z-index: 35; max-width: calc(100vw - 36px); }
+.watch-fullscreen .site-header, .theater-mode .site-header { display: none; }
+.watch-fullscreen .watch-room, .theater-mode .watch-room { height: 100dvh; padding: 0 6px 6px; }
+.watch-fullscreen .watch-workspace, .theater-mode .watch-workspace { display: block; overflow: hidden; border-radius: 6px; }
+.watch-fullscreen .screen-panel, .theater-mode .screen-panel { left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important; }
+.watch-fullscreen .camera-panel, .theater-mode .camera-panel { display: flex !important; }
+.watch-fullscreen .panel-resize, .theater-mode .panel-resize { display: none; }
+.watch-fullscreen .screen-handle, .theater-mode .screen-handle { cursor: default; }
+.watch-fullscreen .screen-controls, .theater-mode .screen-controls { padding-left: 10px; }
+@media (max-width: 759px) {
+  .watch-workspace { display: block; overflow: hidden; }
+  .workspace-panel { position: absolute !important; }
+  .screen-panel { inset: 0 !important; width: 100% !important; height: 100% !important; }
+  .screen-stage { flex: 1; min-height: 0; height: auto; aspect-ratio: auto; }
+  .camera-panel { inset: auto !important; aspect-ratio: auto; }
+  .partner-panel { right: 8px !important; bottom: var(--camera-floor, 130px) !important; width: 145px !important; height: 116px !important; }
+  .self-panel { right: 161px !important; bottom: var(--camera-floor, 130px) !important; width: 100px !important; height: 90px !important; }
+  .fullscreen-toggle { min-height: 24px; font-size: 8px; gap: 4px; }
+  .watch-link-bar { padding: 6px 10px; gap: 5px 10px; }
+  .watch-link-bar p { font-size: 8px; }
+  .reactions-popover { right: 12px; bottom: 70px; }
+}

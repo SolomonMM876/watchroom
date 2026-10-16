@@ -1,6 +1,6 @@
-import { WatchConnection } from './rtc.js';
+import { WatchConnection } from './rtc.js?v=room-layout-3';
 import { ReactionSounds } from './reaction-sounds.js';
-import { initWatchLayout } from './layout.js';
+import { initWatchLayout } from './layout.js?v=room-layout-3';
 import { joinSharedRoom } from './shared-room.js';
 import { parseWatchLink } from './watch-link.js';
 
@@ -124,7 +124,7 @@ function toast(message) {
 
 function readableError(error) {
   if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') return 'Permission wasn’t granted. You can turn on your camera, mic, or screen sharing whenever you’re ready.';
-  if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') return 'No camera or microphone was found. You can still share a tab and chat.';
+  if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') return 'No camera or microphone was found. You can still open a link or share a tab.';
   if (error?.name === 'NotReadableError') return 'Your camera or microphone is busy. Close any other app using it and try again.';
   return error?.message || 'Something interrupted the connection. Please try again.';
 }
@@ -248,9 +248,6 @@ function updateConnection() {
   for (const id of ['share-button', 'stage-share-button']) $(id).disabled = !session || !!screenShareIntent || (!!remoteScreen && !localScreen);
   for (const id of ['watch-link-button', 'stage-link-button', 'change-watch-link', 'stop-watch-link', 'watch-link-submit']) $(id).disabled = !session || (!!peer && !connected);
   document.querySelectorAll('[data-reaction]').forEach((button) => { button.disabled = !connected; });
-  $('chat-input').disabled = !connected;
-  $('chat-form').querySelector('button').disabled = !connected;
-  $('chat-input').placeholder = connected ? 'Message your partner' : 'Connect with your partner first';
   $('countdown-button').disabled = !connected || !!countdownTimer;
   $('remote-status').textContent = !peer ? 'waiting' : connected ? 'connected' : 'connecting';
   if (!peer) $('remote-placeholder-text').textContent = 'Waiting for partner';
@@ -324,6 +321,7 @@ function renderScreen() {
   if (activeWatchLink?.kind === 'video') $('watch-link-video').volume = Number($('movie-volume').value) / 100;
   $('movie-volume').disabled = mine || activeWatchLink?.kind === 'page';
   $('movie-volume').title = activeWatchLink?.kind === 'page' ? 'Use the volume control inside the webpage’s player.' : mine ? 'Adjust your movie volume in the shared tab. This slider controls received movie audio.' : 'Movie audio volume';
+  watchLayout.refresh?.();
 }
 
 function clearWatchPlayer() {
@@ -355,7 +353,8 @@ function renderWatchPlayer() {
     player.volume = Number($('movie-volume').value) / 100;
   } else {
     player.title = `Watch page from ${link.hostname}`;
-    player.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-presentation allow-popups');
+    // Some streaming players reject sandboxed ancestors. Use a standard
+    // cross-origin frame; browser origin and permission checks still apply.
     player.setAttribute('allow', 'autoplay; fullscreen; encrypted-media; picture-in-picture');
     const embedHost = new URL(link.embedUrl).hostname;
     player.referrerPolicy = ['www.youtube.com', 'youtube.com', 'www.youtube-nocookie.com', 'youtube-nocookie.com'].includes(embedHost) ? 'strict-origin' : 'no-referrer';
@@ -576,8 +575,13 @@ async function exitRoom({ serverClosed = false, showLanding = !sharedMode, cance
   watchLayout.deactivate();
   $('landing').hidden = !showLanding;
   document.body.classList.remove('theater-mode');
+  if (!preserveWatchLink && document.fullscreenElement === document.documentElement) {
+    void document.exitFullscreen().catch(() => {});
+  }
+  $('reactions-popover').hidePopover?.();
   for (const modal of document.querySelectorAll('dialog[open]')) modal.close();
-  $('chat-log').replaceChildren();
+  $('room-notice').textContent = '';
+  $('awake-prompt')?.remove();
   $('reaction-layer').replaceChildren();
   updateDeviceState({ camera: false, mic: false });
   renderScreen();
@@ -599,38 +603,7 @@ function openInvite() {
 }
 
 function appendSystem(text) {
-  const log = $('chat-log');
-  const message = document.createElement('div');
-  message.className = 'chat-system';
-  message.textContent = text;
-  log.append(message);
-  trimChat();
-}
-
-function trimChat() {
-  const log = $('chat-log');
-  while (log.children.length > 100) log.firstElementChild.remove();
-  log.scrollTop = log.scrollHeight;
-}
-
-function appendChat(message, own = false) {
-  $('chat-log').querySelector('.chat-welcome')?.remove();
-  const entry = document.createElement('div');
-  entry.className = `chat-message${own ? ' own' : ''}`;
-  const metadata = document.createElement('div');
-  metadata.className = 'chat-message-meta';
-  const name = document.createElement('span');
-  name.textContent = own ? 'You' : peer?.name || 'Partner';
-  const time = document.createElement('time');
-  const stamp = Number(message.time) || Date.now();
-  time.textContent = new Date(stamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  const text = document.createElement('div');
-  text.className = 'chat-message-text';
-  text.textContent = message.text.slice(0, 2000);
-  metadata.append(name, time);
-  entry.append(metadata, text);
-  $('chat-log').append(entry);
-  trimChat();
+  $('room-notice').textContent = text;
 }
 
 function showReaction(type, own = false, sound = false) {
@@ -696,8 +669,7 @@ function showAwakePrompt() {
   dismiss.addEventListener('click', () => { prompt.remove(); });
   actions.append(reply, dismiss);
   prompt.append(text, actions);
-  $('chat-log').append(prompt);
-  trimChat();
+  $('awake-prompt-host').append(prompt);
 }
 
 function startCountdown(goAt) {
@@ -725,8 +697,7 @@ function receiveMessage(message) {
   if (!message || typeof message !== 'object' || typeof message.id !== 'string' || recentMessages.has(message.id)) return;
   recentMessages.add(message.id);
   if (recentMessages.size > 200) recentMessages.delete(recentMessages.values().next().value);
-  if (message.type === 'chat' && typeof message.text === 'string' && message.text.length <= 2000) appendChat(message);
-  else if (message.type === 'reaction' && Object.prototype.hasOwnProperty.call(reactionTypes, message.reaction)) showReaction(message.reaction, false, message.sound === true);
+  if (message.type === 'reaction' && Object.prototype.hasOwnProperty.call(reactionTypes, message.reaction)) showReaction(message.reaction, false, message.sound === true);
   else if (message.type === 'countdown' && Number.isFinite(message.goAt) && Math.abs(message.goAt - Date.now()) < 30000) startCountdown(message.goAt);
   else if (message.type === 'watch-link' && applyWatchLink(message)) {
     appendSystem(message.url === null ? 'Your partner closed the shared link.' : `${peer?.name || 'Your partner'} opened a link for both of you.`);
@@ -736,7 +707,7 @@ function receiveMessage(message) {
 function sendMessage(payload) {
   if (!session || !peer || !rtc?.messagesReady) { toast('Connect with your partner first.'); return null; }
   const message = { ...payload, id: crypto.randomUUID(), time: Date.now() };
-  if (!rtc.sendMessage(message)) { toast('The chat connection isn’t ready. Try Reconnect.'); return null; }
+  if (!rtc.sendMessage(message)) { toast('The room connection isn’t ready. Try Reconnect.'); return null; }
   return message;
 }
 
@@ -834,13 +805,6 @@ for (const [button, video] of [['enable-sound', 'screen-video'], ['enable-voice'
     try { $(video).muted = false; await $(video).play(); $(button).hidden = true; } catch { toast('Click the video or check your browser’s sound permission for Watchroom.'); }
   });
 }
-$('chat-form').addEventListener('submit', (event) => {
-  event.preventDefault();
-  const text = $('chat-input').value.trim();
-  if (!text) return;
-  const message = sendMessage({ type: 'chat', text });
-  if (message) { appendChat(message, true); $('chat-input').value = ''; $('chat-input').focus(); }
-});
 document.querySelectorAll('[data-reaction]').forEach((button) => button.addEventListener('click', () => {
   enableReactionAudio();
   const type = button.dataset.reaction;
@@ -864,15 +828,21 @@ $('countdown-button').addEventListener('click', () => {
 $('theater-button').addEventListener('click', () => {
   const enabled = document.body.classList.toggle('theater-mode');
   $('theater-button').setAttribute('aria-pressed', String(enabled));
-  $('theater-button').setAttribute('aria-label', enabled ? 'Exit theater mode' : 'Enter theater mode');
+  $('theater-button').setAttribute('aria-label', enabled ? 'Exit focus view' : 'Enter focus view');
 });
 $('fullscreen-button').addEventListener('click', async () => {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
-    else await $('screen-stage').requestFullscreen();
-  } catch { toast('Fullscreen isn’t available here. Use theater mode for a larger screen.'); }
+    else await document.documentElement.requestFullscreen();
+  } catch { toast('Fullscreen isn’t available here. Use focus view for a larger screen with cameras.'); }
 });
-document.addEventListener('fullscreenchange', () => { $('fullscreen-button').setAttribute('aria-label', document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'); });
+document.addEventListener('fullscreenchange', () => {
+  const enabled = document.fullscreenElement === document.documentElement;
+  document.body.classList.toggle('watch-fullscreen', enabled);
+  $('fullscreen-button').setAttribute('aria-label', enabled ? 'Exit fullscreen with cameras' : 'Enter fullscreen with cameras');
+  $('fullscreen-button').setAttribute('aria-pressed', String(enabled));
+  $('fullscreen-button').querySelector('span').textContent = enabled ? 'Exit fullscreen' : 'Fullscreen with cameras';
+});
 $('leave-button').addEventListener('click', async () => { sharedPaused = true; await exitRoom(); updateConnection(); toast('You left the room.'); });
 $('reconnect-button').addEventListener('click', async () => {
   if (reconnecting) return;

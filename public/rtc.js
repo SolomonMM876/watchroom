@@ -298,7 +298,7 @@ export class WatchConnection extends EventTarget {
       // captures running so Reconnect can reuse their granted permissions.
       channel.close();
       this._syncState(pc);
-      this._emit("error", new Error("The chat connection was interrupted. Use Reconnect to try again."));
+      this._emit("error", new Error("The room connection was interrupted. Use Reconnect to try again."));
     };
     channel.onmessage = ({ data }) => {
       if (!isCurrent()) return;
